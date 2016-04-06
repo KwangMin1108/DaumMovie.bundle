@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 # Daum Movie
 
-import urllib, unicodedata
+import urllib, unicodedata, json
 
-DAUM_MOVIE_SRCH   = "http://movie.daum.net/search.do?type=%s&q=%s"
+DAUM_MOVIE_SRCH   = "http://m.movie.daum.net/data/movie/search/v2/movie.json?size=20&searchText=%s&start=1&sortType=acc"
+DAUM_TV_SRCH = "http://m.movie.daum.net/data/movie/search/v2/tv.json?size=20&searchText=%s&start=1"
 
 DAUM_MOVIE_DETAIL = "http://m.movie.daum.net/data/movie/movie_info/detail.json?movieId=%s"
 DAUM_MOVIE_CAST   = "http://m.movie.daum.net/data/movie/movie_info/cast_crew.json?pageNo=1&pageSize=100&movieId=%s"
 DAUM_MOVIE_PHOTO  = "http://m.movie.daum.net/data/movie/photo/movie/list.json?pageNo=1&pageSize=100&id=%s"
 
-DAUM_TV_DETAIL    = "http://m.movie.daum.net/data/movie/tv/detail.json?tvProgramId=%s"
-DAUM_TV_DETAIL2   = "http://movie.daum.net/tv/detail/main.do?tvProgramId=%s"
+DAUM_TV_DETAIL    = "http://m.movie.daum.net/tv/detail/main?tvProgramId=%s"
+DAUM_TV_DETAIL2   = "http://m.movie.daum.net/tv/detail/main?tvProgramId=%s"
 DAUM_TV_CAST      = "http://m.movie.daum.net/data/movie/tv/cast_crew.json?pageNo=1&pageSize=100&tvProgramId=%s"
 DAUM_TV_PHOTO     = "http://m.movie.daum.net/data/movie/photo/tv/list.json?pageNo=1&pageSize=100&id=%s"
-DAUM_TV_EPISODE   = "http://m.movie.daum.net/m/tv/episode?tvProgramId=%s"
+DAUM_TV_EPISODE   = "http://m.movie.daum.net/data/movie/tv/episode.json?pageNo=1&pageSize=1000&tvProgramId=%s"
 
 IMDB_TITLE_SRCH   = "http://www.google.com/search?q=site:imdb.com+%s"
 TVDB_TITLE_SRCH   = "http://thetvdb.com/api/GetSeries.php?seriesname=%s"
@@ -34,18 +35,26 @@ def searchDaumMovie(cate, results, media, lang):
     media_name = unicodedata.normalize('NFKC', unicode(media_name)).strip()
     Log.Debug("search: %s %s" %(media_name, media.year))
 
-    url = DAUM_MOVIE_SRCH % (cate, urllib.quote(media_name.encode('utf8')))
-    html = HTML.ElementFromURL( url )
+    if cate == 'tv':
+      url = DAUM_TV_SRCH % (urllib.quote(media_name.encode('utf8')))
+    else:
+      url = DAUM_MOVIE_SRCH % (urllib.quote(media_name.encode('utf8')))
 
-    items = html.xpath('//span[@class="fl srch"]')
+    response = urllib.urlopen( url )
+    jsonResult = json.loads(response.read())
+    items = jsonResult['data']
+
     for item in items:
-      try: year = RE_YEAR_IN_NAME.search(HTML.StringFromElement(item)).group(1)
-      except: year = None
-      node= item.xpath('a')[0]
-      title = "".join(node.xpath('descendant-or-self::text()'))
-      url = node.get('href')
-      id_ptn = RE_TV_ID if cate == 'tv' else RE_MOVIE_ID
-      id = id_ptn.search(url).group(1)
+      title = "".join(item['titleKo'])
+      year = item['prodYear']
+
+      if year == 'null':
+        year = None
+
+      if cate == 'tv':
+        id = item['tvProgramId']
+      else:
+        id = item['movieId']
 
       if year == media.year:
         score = 95
@@ -53,8 +62,9 @@ def searchDaumMovie(cate, results, media, lang):
         score = 80
       else:
         score = 10
-      Log.Debug('ID=%s, media_name=%s, title=%s, year=%s' %(id, media_name, title, year))
-      results.Append(MetadataSearchResult(id=id, name=title, year=year, score=score, lang=lang))
+
+      Log.Debug('ID=%s, title=%s, year=%s, score=%s' %(id, title, year, score))
+      results.Append(MetadataSearchResult(lang=lang, thumb=None, score=score, year=year, id=id, name=title))
 
 def updateDaumMovie(cate, metadata):
   # (1) from detail page
